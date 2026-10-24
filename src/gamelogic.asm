@@ -19,16 +19,19 @@
 
 
 POINTS_CORRECT  equ 10      ; score added for a correct answer
-TIME_BONUS      equ 10      ; seconds added for a correct answer
+TIME_BONUS      equ 30      ; seconds added for a correct answer
 TIME_PENALTY    equ 5       ; seconds removed for a wrong answer
 START_TIME      equ 60      ; (stand-in; Cleone owns the real start time)
+FAST_LIMIT      equ 546     ; 30 seconds
 
                             ; UPDATE THIS WHEN ADDING WORD
 SUBJ_COUNT      equ 20      ; must match number of entries in SubjTbl
 VERB_COUNT      equ 20      ; must match VerbTbl
 OBJ_COUNT       equ 20      ; must match ObjTbl
 
-.data
+.data  
+tBonus db 13,10,'TIME BONUS! +30 SECONDS',13,10,'$' ;FOR PLACEHOLDER ONLY| Can remove 
+
 ;SHARED GAME STATE 
 
 PlainBuf    db 80 dup('$')  ; ANSWER KEY  (owned by Dan)
@@ -44,7 +47,22 @@ Score       dw 0            ; (Dan updates, Sam displays, Cleone saves)
 Round       dw 1            ; (Dan updates)
 RoundStatus db 0            ; 0 = in progress, 1 = last submit correct, 2 = wrong
 TimeLeft    dw START_TIME   ; seconds (Cleone owns/ticks it, Dan adds/subtracts)
-Seed        dw 0            ; random generator state (Dan)
+Seed        dw 0            ; random generator state (Dan)  
+    
+; TIMER
+    
+GameOver        db 0
+HighScore       dw 0
+
+LastTick        dw 0
+TickAccum       dw 0
+
+WordStartTick   dw 0
+FastAnswer      db 0
+
+HSFileName      db 'HISCORE.DAT', 0
+HSBuffer        db 3 dup(0)
+HSHandle        dw 0
 
 ; WORD BANK (all UPPERCASE, '$' terminated
 ; 20 of each type 
@@ -149,11 +167,14 @@ tNew    db 'New round started, cipher: $'
 main:
     mov ax, @data
     mov ds, ax
-    mov es, ax              
+    mov es, ax      
+    
+    mov HighScore, 0
+    call StartGameTimer        
 
     call SeedRandom
     call NewRound
-
+                                     
     ; show the round
     lea dx, tPlain
     call PrintStr
@@ -171,21 +192,39 @@ main:
     call PrintStr
     call PrintKeys
     lea dx, crlf
-    call PrintStr
-
+    call PrintStr        
+   
+    call DisplayGameTime
+    call StartWordTimer   
+    
     ; test 1: submit without decrypting 
-    lea dx, tWrong
-    call PrintStr
-    call SubmitAnswer
-    call ShowState
+    ;lea dx, tWrong
+    ;call PrintStr
+    ;call SubmitAnswer
+    ;call ShowState
 
     ; test 2: player decrypted 
     lea dx, tRight
     call PrintStr
     lea si, PlainBuf
     lea di, WorkBuf
-    call CopyStr
+    call CopyStr   
+    
+    call CheckWordTime
+    
     call SubmitAnswer       ; correct -> automatically next round
+    
+    ; Apply bonus only if the answer was correct and fast (less than 30 sec siya)
+    cmp al, 1
+    jne main_after_answer
+
+    cmp FastAnswer, 1
+    jne main_after_answer
+
+    call ApplyTimeBonus
+    call DisplayTimeBonus
+    
+main_after_answer:     
     call ShowState
     lea dx, tNew
     call PrintStr
@@ -193,11 +232,12 @@ main:
     call PrintStr
     lea dx, crlf
     call PrintStr
-
+    
+    call SaveHighScore        ; Saving High-score here, but not yet found in the file hehe just the concept... | not yet tested fully
+    
     mov ax, 4C00h
-    int 21h
-
-
+    int 21h        
+           
 ; RANDOM NUMBER GENERATION
 
 
@@ -452,7 +492,6 @@ ApplyResult proc
     cmp al, 1
     jne ar_wrong
     add Score, POINTS_CORRECT
-    add TimeLeft, TIME_BONUS
     inc Round
     mov RoundStatus, 1
     ret
@@ -487,6 +526,35 @@ SubmitAnswer proc
 sa_done:
     ret
 SubmitAnswer endp
+
+; THIS IS FOR TIME BONUSES | if player answers within 30 seconds.
+; Call only after a correct answer.
+ApplyTimeBonus proc
+    cmp FastAnswer, 1
+    jne ATB_done
+
+    mov ax, TimeLeft
+    add ax, TIME_BONUS
+    mov TimeLeft, ax
+
+ATB_done:
+    ret
+ApplyTimeBonus endp
+
+
+; Call only after a WRONG answer.
+ApplyWrongPenalty proc
+    cmp TimeLeft, TIME_PENALTY
+    ja AWP_subtract
+
+    mov TimeLeft, 0
+    mov GameOver, 1
+    ret
+
+AWP_subtract:
+    sub TimeLeft, TIME_PENALTY
+    ret
+ApplyWrongPenalty endp
 
 
 ;  HARNESS HELPERS  (STAND-IN>
@@ -556,6 +624,31 @@ ShowState proc
     ret
 ShowState endp
 
+DisplayGameTime proc ;FOR PLACEHOLDER
+    push ax
+    push bx
+    push dx
+
+    lea dx, tTime
+    call PrintStr
+
+    mov ax, TimeLeft
+    call PrintNum
+
+    lea dx, crlf
+    call PrintStr
+
+    pop dx
+    pop bx
+    pop ax
+    ret
+DisplayGameTime endp   
+
+DisplayTimeBonus proc  ;FOR PLACEHOLDER
+    lea dx, tBonus
+    call PrintStr
+    ret
+DisplayTimeBonus endp
 
 ;  STAND-IN for RICA's EncryptMsg  
 ;   IN : SI = plaintext, DI = output buffer, CL = shift (1..25)
@@ -585,6 +678,157 @@ en_copy:
 en_done:
     mov byte ptr [di], '$'
     ret
-EncryptMsg endp
+EncryptMsg endp       
 
+
+; OVERALL GAME TIMER
+StartGameTimer proc
+    mov TimeLeft, START_TIME
+    mov TickAccum, 0
+    mov GameOver, 0
+
+    mov ah, 00h
+    int 1Ah
+    mov LastTick, dx
+    ret
+StartGameTimer endp
+
+
+UpdateGameTimer proc
+    cmp GameOver, 1
+    je UGT_done
+
+    mov ah, 00h
+    int 1Ah
+
+    mov ax, dx
+    sub ax, LastTick
+    mov LastTick, dx
+    add TickAccum, ax
+
+UGT_second:
+    cmp TickAccum, 18
+    jb UGT_done
+
+    sub TickAccum, 18
+
+    cmp TimeLeft, 0
+    je UGT_end
+
+    dec TimeLeft
+    cmp TimeLeft, 0
+    jne UGT_second
+
+UGT_end:
+    mov TimeLeft, 0
+    mov GameOver, 1
+
+UGT_done:
+    ret
+UpdateGameTimer endp
+                   
+
+; TIME BONUSES | PER WORD TIMER
+StartWordTimer proc
+    mov ah, 00h
+    int 1Ah
+    mov WordStartTick, dx
+    mov FastAnswer, 0
+    ret
+StartWordTimer endp
+
+
+; THIS IS FOR TIME BONUSES
+; Set FastAnswer = 1 if answered within 30 seconds.
+CheckWordTime proc
+    mov ah, 00h
+    int 1Ah
+
+    mov ax, dx
+    sub ax, WordStartTick
+
+    cmp ax, FAST_LIMIT
+    ja CWT_slow
+
+    mov FastAnswer, 1
+    ret
+
+CWT_slow:
+    mov FastAnswer, 0
+    ret
+CheckWordTime endp
+
+;THIS IS FOR HIGHSCORE | If they have existing high score na.
+LoadHighScore proc
+    mov HighScore, 0
+
+    mov ah, 3Dh
+    mov al, 00h
+    lea dx, HSFileName
+    int 21h
+    jc LHS_done       ; If file doesn't exist, use 0
+
+    mov HSHandle, ax
+
+    mov ah, 3Fh
+    mov bx, HSHandle
+    mov cx, 2
+    lea dx, HSBuffer
+    int 21h
+
+    cmp ax, 2
+    jne LHS_close
+
+    mov ax, word ptr HSBuffer
+    mov HighScore, ax
+
+LHS_close:
+    mov ah, 3Eh
+    mov bx, HSHandle
+    int 21h
+
+LHS_done:
+    ret
+LoadHighScore endp
+        
+
+;SAVING NEW HIGH SCORE
+SaveHighScore proc
+    mov ax, Score
+    cmp ax, HighScore
+    jbe SHS_done
+
+    ; Update the high score in memory.
+    mov HighScore, ax
+
+    ; Create or overwrite the file.
+    mov ah, 3Ch
+    mov cx, 0
+    lea dx, HSFileName
+    int 21h
+    jc SHS_done
+
+    mov HSHandle, ax
+
+    mov ah, 40h
+    mov bx, HSHandle
+    mov cx, 2
+    lea dx, HighScore
+    int 21h
+
+    push ax
+
+    mov ah, 3Eh
+    mov bx, HSHandle
+    int 21h
+
+    pop ax
+
+    cmp ax, 2
+    jne SHS_done
+
+SHS_done:
+    ret
+SaveHighScore endp
+        
 end main
