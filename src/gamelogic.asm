@@ -1,4 +1,3 @@
-; ============================================================
 ; Programmer 3 - Puzzle Generation and Scoring - DAN
 ; Module: GAMELOGIC
 ; Responsibilities
@@ -10,15 +9,14 @@
 ; Code contribution: Random number generation, puzzle selection, answer validation, and scoring procedures.
 ; Dependencies: Uses Programmer 2’s encryption procedure and returns puzzle data to Programmer 1.
 
-;  Sections marked "STAND-IN" so this file runs by itself.
-;  Delete them when we merge, Wag kalimutan, teh.
-; ============================================================
+; Sections marked "STAND-IN" so this file runs by itself. you can hiram naman if you wants 
+
 
 .model small
 .stack 100h
 
-; ---------------- CONSTANTS (tune the game here) ------------
-; Want it harder or easier? Edit these nlang, no need to touch the logic.   
+;CONSTANTS (tune the game here)
+
 
 POINTS_CORRECT  equ 10      ; score added for a correct answer
 TIME_BONUS      equ 10      ; seconds added for a correct answer
@@ -31,7 +29,7 @@ VERB_COUNT      equ 20      ; must match VerbTbl
 OBJ_COUNT       equ 20      ; must match ObjTbl
 
 .data
-; ---------------- SHARED GAME STATE (the "contract") --------
+;SHARED GAME STATE 
 
 PlainBuf    db 80 dup('$')  ; ANSWER KEY  (owned by Dan)
 CipherBuf   db 80 dup('$')  ; ORIGINAL ciphertext / target shown to player (Dan)
@@ -48,7 +46,7 @@ RoundStatus db 0            ; 0 = in progress, 1 = last submit correct, 2 = wron
 TimeLeft    dw START_TIME   ; seconds (Cleone owns/ticks it, Dan adds/subtracts)
 Seed        dw 0            ; random generator state (Dan)
 
-; ---------------- WORD BANK (all UPPERCASE, '$' terminated) -
+; WORD BANK (all UPPERCASE, '$' terminated
 ; 20 of each type 
 ; Rules para grammatically keri ang lahat ng combo:
 ;   subjects = singular, verbs = 3rd person singular + transitive,
@@ -137,7 +135,6 @@ ObjTbl  dw offset O1,  offset O2,  offset O3,  offset O4,  offset O5
         dw offset O11, offset O12, offset O13, offset O14, offset O15
         dw offset O16, offset O17, offset O18, offset O19, offset O20
 
-; ---------------- harness-only text -------------------------
 crlf    db 13,10,'$'
 tPlain  db 'Plain  : $'
 tCipher db 'Cipher : $'
@@ -152,12 +149,12 @@ tNew    db 'New round started, cipher: $'
 main:
     mov ax, @data
     mov ds, ax
-    mov es, ax              ; ES = DS, needed by STOSB/LODSB. Sam, wag mo kalimutan ito!
+    mov es, ax              
 
     call SeedRandom
     call NewRound
 
-    ; ---- show the round ----
+    ; show the round
     lea dx, tPlain
     call PrintStr
     lea dx, PlainBuf
@@ -176,19 +173,19 @@ main:
     lea dx, crlf
     call PrintStr
 
-    ; ---- test 1: submit without decrypting (should be wrong) ----
+    ; test 1: submit without decrypting 
     lea dx, tWrong
     call PrintStr
     call SubmitAnswer
     call ShowState
 
-    ; ---- test 2: pretend the player decrypted it (should be correct) ----
+    ; test 2: player decrypted 
     lea dx, tRight
     call PrintStr
     lea si, PlainBuf
     lea di, WorkBuf
     call CopyStr
-    call SubmitAnswer       ; correct -> automatically starts the next round
+    call SubmitAnswer       ; correct -> automatically next round
     call ShowState
     lea dx, tNew
     call PrintStr
@@ -200,15 +197,15 @@ main:
     mov ax, 4C00h
     int 21h
 
-; ============================================================
-;  RANDOM NUMBER GENERATION
-; ============================================================
+
+; RANDOM NUMBER GENERATION
+
 
 ; SeedRandom - call ONCE at program start (Sam, sa main mo ito ilagay).
 ; Seeds from the BIOS clock tick counter (INT 1Ah, AH=0), so every run is different. Kung wala ito, same sentence palag.
 SeedRandom proc
     mov ah, 0
-    int 1Ah                 ; CX:DX = ticks since midnight
+    int 1Ah                 
     mov Seed, dx
     xor Seed, cx
     ret
@@ -222,13 +219,13 @@ RandRange proc
     push bx
     push cx
     push dx
-    mov cx, ax              ; CX = n
+    mov cx, ax              
     mov ax, Seed
     mov bx, 25173
     mul bx                  ; DX:AX = Seed * 25173
     add ax, 13849
     mov Seed, ax            ; new seed
-    mov al, ah              ; use high byte (0..255)
+    mov al, ah              ; use high byte
     xor ah, ah
     xor dx, dx
     div cx                  ; DX = AX mod n
@@ -239,9 +236,9 @@ RandRange proc
     ret
 RandRange endp
 
-; ============================================================
+
 ;  SENTENCE GENERATOR
-; ============================================================
+
 
 ; PickString
 ;   IN : BX = offset of a pointer table, AX = number of entries
@@ -249,8 +246,8 @@ RandRange endp
 PickString proc
     push ax
     push bx
-    call RandRange          ; AX = 0..count-1
-    shl ax, 1               ; each table entry is 2 bytes (a word)
+    call RandRange          
+    shl ax, 1               
     add bx, ax
     mov si, [bx]
     pop bx
@@ -258,8 +255,6 @@ PickString proc
     ret
 PickString endp
 
-; AppendStr - copies the string at SI to ES:DI WITHOUT the '$'.
-;   DI is left pointing at where the '$' would go.
 AppendStr proc
 as_next:
     lodsb
@@ -271,8 +266,6 @@ as_done:
     ret
 AppendStr endp
 
-; GenSentence - builds  SUBJECT + ' ' + VERB + ' ' + OBJECT  into PlainBuf
-;   Example result: "THE WIZARD STEALS A SHINY COIN".
 GenSentence proc
     lea di, PlainBuf
 
@@ -300,11 +293,8 @@ GenSentence proc
     ret
 GenSentence endp
 
-; ============================================================
-;  PUZZLE CONSTRUCTION
-; ============================================================
 
-; CopyStr - copy '$'-terminated string SI -> DI (includes the '$')
+;  PUZZLE CONSTRUCTION
 CopyStr proc
 cp_loop:
     lodsb
@@ -316,7 +306,8 @@ CopyStr endp
 
 ; ResetWork - restore the working copy to the original ciphertext.
 ;   This is our "undo all" para sa mga player na nagkamali ng todo.
-;   Sam you can hook it up as a RESET command.
+;   Sam you can hook it up as a RESET command.    
+
 ResetWork proc
     lea si, CipherBuf
     lea di, WorkBuf
@@ -327,7 +318,8 @@ ResetWork endp
 ; EncryptPerWord - splits PlainBuf at the spaces; every word gets its OWN
 ;   random key (1..25) stored in ShiftKeys, is encrypted with rica's
 ;   EncryptMsg (one word at a time), and is appended to CipherBuf.
-;   Spaces are copied through unchanged. Sets WordCount.
+;   Spaces are copied through unchanged. Sets WordCount.   
+
 EncryptPerWord proc
     lea si, PlainBuf
     lea di, CipherBuf
@@ -340,8 +332,8 @@ epw_word:
     mov ShiftKeys[bx], al
     mov cl, al              ; CL = key for this word
 
-    ; --- copy one word from PlainBuf (SI) into TmpWord ---
-    push di                 ; save position in CipherBuf
+ 
+    push di                 
     lea di, TmpWord
 epw_copy:
     mov al, [si]
@@ -357,7 +349,7 @@ epw_endw:
     mov byte ptr [di], '$'
     pop di
 
-    ; --- encrypt TmpWord -> EncTmp with rica's procedure ---
+    ;encrypt TmpWord -> EncTmp with rica's procedure ---
     push si                 ; protect my pointers/index from her code, just in case
     push di
     push bx
@@ -386,10 +378,10 @@ epw_done:
     ret
 EncryptPerWord endp
 
-; FindWord - helper for Rica/Sam: locate word N inside WorkBuf.
+;   FindWord - helper for Rica/Sam: locate word N inside WorkBuf.
 ;   IN : AL = word number (1-based)
 ;   OUT: SI = start of that word in WorkBuf, CF = 0
-;        CF = 1 if there is no such word (invalid number)
+;        CF = 1 if there is no such word (invalid)
 FindWord proc
     push bx
     mov bl, al
@@ -428,14 +420,10 @@ NewRound proc
     ret
 NewRound endp
 
-; ============================================================
 ;  ANSWER CHECKING + SCORING
-; ============================================================
-
-; CheckAnswer - compare WorkBuf with PlainBuf
+;   CheckAnswer - compare WorkBuf with PlainBuf
 ;   OUT: AL = 1 if equal, 0 if different
-;   Yes, mali talaga pwedeng mangyari: the player can SUBMIT early
-;   or shift the wrong word. That answers our "surfacing problem".
+
 CheckAnswer proc
     lea si, WorkBuf
     lea di, PlainBuf
@@ -482,7 +470,7 @@ ar_store:
     ret
 ApplyResult endp
 
-; SubmitAnswer - Sam calls this when the player submit an answer.
+; SubmitAnswer - Sam you call this when the player submit an answer.
 ;   OUT: AL = 1 correct (next round already generated), 0 wrong
 ;   On wrong, the working copy is kept so the player can keep trying.
 SubmitAnswer proc
@@ -500,10 +488,9 @@ sa_done:
     ret
 SubmitAnswer endp
 
-; ============================================================
-;  HARNESS HELPERS  (STAND-IN - delete when merging)
-; ============================================================
-PrintStr proc               ; DX = offset of '$' string
+
+;  HARNESS HELPERS  (STAND-IN>
+PrintStr proc              
     mov ah, 9
     int 21h
     ret
@@ -569,12 +556,11 @@ ShowState proc
     ret
 ShowState endp
 
-; ============================================================
+
 ;  STAND-IN for RICA's EncryptMsg  
 ;   IN : SI = plaintext, DI = output buffer, CL = shift (1..25)
 ;   Shifts A-Z forward by CL, leaves everything else alone.
 ;   you can borrow this rica but here lang siya for testing, pwede mo namang hiramin hehe :3
-; ============================================================
 EncryptMsg proc
 en_loop:
     mov al, [si]
