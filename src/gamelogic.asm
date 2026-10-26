@@ -7,7 +7,7 @@
 ; Compare submitted answers with the correct plaintext.
 ; Update score, time bonuses, penalties, and round status.
 ; Code contribution: Random number generation, puzzle selection, answer validation, and scoring procedures.
-; Dependencies: Uses Programmer 2ís encryption procedure and returns puzzle data to Programmer 1.
+; Dependencies: Uses Programmer 2ùs encryption procedure and returns puzzle data to Programmer 1.
 
 ; Sections marked "STAND-IN" so this file runs by itself. you can hiram naman if you wants 
 
@@ -650,35 +650,8 @@ DisplayTimeBonus proc  ;FOR PLACEHOLDER
     ret
 DisplayTimeBonus endp
 
-;  STAND-IN for RICA's EncryptMsg  
-;   IN : SI = plaintext, DI = output buffer, CL = shift (1..25)
-;   Shifts A-Z forward by CL, leaves everything else alone.
-;   you can borrow this rica but here lang siya for testing, pwede mo namang hiramin hehe :3
-EncryptMsg proc
-en_loop:
-    mov al, [si]
-    cmp al, '$'
-    je en_done
-    cmp al, 'A'
-    jb en_copy
-    cmp al, 'Z'
-    ja en_copy
-    sub al, 'A'
-    add al, cl
-    cmp al, 26
-    jb en_ok
-    sub al, 26
-en_ok:
-    add al, 'A'
-en_copy:
-    mov [di], al
-    inc si
-    inc di
-    jmp en_loop
-en_done:
-    mov byte ptr [di], '$'
-    ret
-EncryptMsg endp       
+;  RICA's encryption module (Programmer 2 - CIPHER)
+include cipher.asm
 
 
 ; OVERALL GAME TIMER
