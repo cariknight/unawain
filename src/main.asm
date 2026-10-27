@@ -7,7 +7,7 @@
 
 POINTS_CORRECT EQU 10
 TIME_BONUS     EQU 30
-START_TIME     EQU 60
+START_TIME     EQU 193
 FAST_LIMIT     EQU 546       ; approximately 30 BIOS ticks/seconds
 SUBJ_COUNT     EQU 20
 VERB_COUNT     EQU 20
@@ -858,24 +858,29 @@ ShowRound PROC
     lea dx, msg_round
     call PrintStr
     mov ax, Round
-    call PrintNum
+    call PrintNum 
+    
     lea dx, msg_score
     call PrintStr
     mov ax, Score
-    call PrintNum
+    call PrintNum 
+    
     lea dx, msg_time
     call PrintStr
     mov ax, TimeLeft
     call PrintNum
+    
     lea dx, msg_cipher
     call PrintStr
     lea dx, CipherBuf
-    call PrintStr
-    call BuildWork
-    lea dx, msg_work
-    call PrintStr
-    lea dx, WorkBuf
-    call PrintStr
+    call PrintStr 
+    
+    ;call BuildWork
+    ;lea dx, msg_work
+    ;call PrintStr
+    ;lea dx, WorkBuf
+    ;call PrintStr 
+    
     lea dx, msg_newline
     call PrintStr
     ret
@@ -918,17 +923,38 @@ gps_again:
     call CheckCurrentWord
     cmp al, 1
     je gps_word_ok
+    
+    mov ah, 02h
+    mov bh, 00h
+    mov dh, 8
+    mov dl, 0
+    int 10h
+    
     lea dx, msg_wrong
     call PrintStr
     jmp gps_refresh
 gps_word_ok:
     call CheckWordTime
-    add Score, POINTS_CORRECT
+    add Score, POINTS_CORRECT 
+    
+    mov ah, 02h
+    mov bh, 00h
+    mov dh, 8
+    mov dl, 0
+    int 10h
+    
     lea dx, msg_correct
-    call PrintStr
+    call PrintStr   
+    
     cmp FastAnswer, 1
     jne gps_word_next
     add TimeLeft, TIME_BONUS
+    
+    mov ah, 02h
+    mov bh, 00h
+    mov dh, 9
+    mov dl, 0
+    
     lea dx, msg_bonus
     call PrintStr
 gps_word_next:
@@ -937,12 +963,31 @@ gps_word_next:
     cmp al, WordCount
     jae gps_submit
     call StartWordTimer
+    jmp gps_refresh
 gps_refresh:
     call BuildWork
+    
+    ;new
+    mov ah, 02h
+    mov bh, 00h
+    mov dh, 4
+    mov dl, 0
+    int 10h
+    
+    
+    ;call ShowRound
     lea dx, msg_work
     call PrintStr
     lea dx, WorkBuf
     call PrintStr
+    ;jmp gps_again
+    mov cx, 40
+gps_clear_answer:
+    mov ah, 02h
+    mov dl, ' '
+    int 21h
+    loop gps_clear_answer
+    
     jmp gps_again
 gps_undo:
     call ResetWork
