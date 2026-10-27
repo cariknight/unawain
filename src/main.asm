@@ -4,6 +4,15 @@
 ; ============================================================
 ; UNAWAIN: DECIPHER
 ; ============================================================
+; In accomplishment of CS125L M2 Machine Problem 
+;
+; CIS303      
+;
+; Group 3:
+; - Caballero, Rica P.
+; - Fernandez, Cleone Zayle T. 
+; - Sy, Samantha Louise P.
+; - Tongco, Dan Julian M.
 
 POINTS_CORRECT EQU 10
 TIME_BONUS     EQU 30
