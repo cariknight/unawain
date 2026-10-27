@@ -7,7 +7,6 @@
 
 POINTS_CORRECT EQU 10
 TIME_BONUS     EQU 30
-TIME_PENALTY   EQU 5
 START_TIME     EQU 60
 FAST_LIMIT     EQU 546       ; approximately 30 BIOS ticks/seconds
 SUBJ_COUNT     EQU 20
@@ -60,16 +59,17 @@ tutorial_str DB 13,10,'HOW TO PLAY',13,10
              DB 'Enter the positive shift used to encrypt each word.',13,10
              DB 'Example: KHOOR encrypted with +3 becomes HELLO',13,10
              DB 'Enter a shift from 1 to 25 for each word.',13,10
-             DB 'Blank Enter = submit; U = undo/reset; R = new round; Q = menu.',13,10
-             DB 'Correct answer: +10 points and +30 seconds if fast.',13,10
-             DB 'Wrong answer: -5 seconds. Time cannot go below zero.',13,10
+             DB 'Stay on a word until it is correct, then move to the next.',13,10
+             DB 'U = undo/reset; R = new round; Q = menu.',13,10
+             DB 'Each correct word: +10 points and +30 seconds if fast.',13,10
+             DB 'Wrong shift: stay on the same word. No time penalty.',13,10
              DB 'Press any key to return to the menu...$'
 prompt_shift DB 13,10,'Shift for word # (1-25; blank Enter=submit; U undo; R restart; Q menu): $'
 msg_invalid DB 13,10,'Invalid input. Enter a number from 1 to 25.',13,10,'$'
 msg_undo DB 13,10,'Answer reset to the original ciphertext.',13,10,'$'
 msg_restart DB 13,10,'Starting a new round...',13,10,'$'
 msg_correct DB 13,10,'CORRECT! +10 points.',13,10,'$'
-msg_wrong DB 13,10,'Not correct. Your work is kept so you can try again.',13,10,'$'
+msg_wrong DB 13,10,'Not correct. Stay on this word and try another shift.',13,10,'$'
 msg_bonus DB 13,10,'TIME BONUS! +30 SECONDS',13,10,'$'
 msg_gameover DB 13,10,'TIME IS UP!',13,10,'$'
 msg_cipher DB 13,10,'Ciphertext: $'
@@ -212,37 +212,9 @@ game_loop:
     jmp game_loop
 
 game_submit:
-    call CheckWordTime
-    call CheckAnswer
-    cmp al, 1
-    jne submit_wrong
-    add Score, POINTS_CORRECT
-    lea dx, msg_correct
-    call PrintStr
-    cmp FastAnswer, 1
-    jne submit_next
-    add TimeLeft, TIME_BONUS
-    lea dx, msg_bonus
-    call PrintStr
-submit_next:
+    ; Per-word score and time were already applied. Next sentence.
     inc Round
     call NewRound
-    jmp game_loop
-
-submit_wrong:
-    mov RoundStatus, 2
-    cmp TimeLeft, TIME_PENALTY
-    jbe wrong_zero
-    sub TimeLeft, TIME_PENALTY
-    jmp wrong_msg
-wrong_zero:
-    mov TimeLeft, 0
-    mov GameOver, 1
-wrong_msg:
-    lea dx, msg_wrong
-    call PrintStr
-    cmp GameOver, 1
-    je game_over
     jmp game_loop
 
 game_restart:
@@ -822,11 +794,74 @@ ca_wrong:
     ret
 CheckAnswer ENDP
 
+; AL=1 if the word at WordIndex in WorkBuf matches PlainBuf.
+; Stay on the current ciphertext word until this succeeds.
+CheckCurrentWord PROC
+    push bx
+    push cx
+    push si
+    push di
+    lea si, WorkBuf
+    lea di, PlainBuf
+    xor cx, cx
+    mov cl, WordIndex
+    cmp cl, 0
+    je ccw_compare
+ccw_skip:
+    mov al, [si]
+    cmp al, '$'
+    je ccw_wrong
+    mov ah, [di]
+    cmp ah, '$'
+    je ccw_wrong
+    cmp al, ' '
+    je ccw_skip_space
+    inc si
+    inc di
+    jmp ccw_skip
+ccw_skip_space:
+    inc si
+    inc di
+    loop ccw_skip
+ccw_compare:
+    mov al, [si]
+    mov ah, [di]
+    cmp al, '$'
+    je ccw_end
+    cmp al, ' '
+    je ccw_end
+    cmp al, ah
+    jne ccw_wrong
+    inc si
+    inc di
+    jmp ccw_compare
+ccw_end:
+    cmp ah, ' '
+    je ccw_right
+    cmp ah, '$'
+    je ccw_right
+ccw_wrong:
+    xor al, al
+    jmp ccw_done
+ccw_right:
+    mov al, 1
+ccw_done:
+    pop di
+    pop si
+    pop cx
+    pop bx
+    ret
+CheckCurrentWord ENDP
+
 ; -------------------- Gameplay --------------------
 ShowRound PROC
     lea dx, msg_round
     call PrintStr
     mov ax, Round
+    call PrintNum
+    lea dx, msg_score
+    call PrintStr
+    mov ax, Score
     call PrintNum
     lea dx, msg_time
     call PrintStr
@@ -846,8 +881,9 @@ ShowRound PROC
     ret
 ShowRound ENDP
 
-; Reads commands/numbers repeatedly. Blank Enter submits; R or Q are commands.
-; Return AL: 1=menu, 2=restart round, 3=submit.
+; Reads commands/numbers repeatedly. R or Q are commands.
+; A correct word awards score/time; the last correct word finishes the round.
+; Return AL: 1=menu, 2=restart round, 3=round complete.
 GetPlayerShifts PROC
 gps_again:
     cmp GameOver, 1
@@ -855,7 +891,7 @@ gps_again:
     lea dx, prompt_shift
     call PrintStr
     call ReadLine
-    ; A blank line (Enter with no text) submits the current answer.
+    ; Blank Enter finishes the round only after every word is correct.
     cmp byte ptr InputBuf[1], 0
     je gps_submit
     mov al, InputBuf[2]
@@ -872,18 +908,35 @@ gps_again:
     jb gps_invalid
     cmp ax, 25
     ja gps_invalid
-    ; Enter shifts in order; repeated entry can revise the current word.
+    ; Apply the shift to the current word only. Advance after it matches.
+    xor bx, bx
     mov bl, WordIndex
     cmp bl, WordCount
-    jae gps_wrap
+    jae gps_invalid
     mov PlayerKeys[bx], al
-    inc WordIndex
+    call BuildWork
+    call CheckCurrentWord
+    cmp al, 1
+    je gps_word_ok
+    lea dx, msg_wrong
+    call PrintStr
     jmp gps_refresh
-gps_wrap:
-    mov WordIndex, 0
-    xor bx, bx
-    mov PlayerKeys[bx], al
+gps_word_ok:
+    call CheckWordTime
+    add Score, POINTS_CORRECT
+    lea dx, msg_correct
+    call PrintStr
+    cmp FastAnswer, 1
+    jne gps_word_next
+    add TimeLeft, TIME_BONUS
+    lea dx, msg_bonus
+    call PrintStr
+gps_word_next:
     inc WordIndex
+    mov al, WordIndex
+    cmp al, WordCount
+    jae gps_submit
+    call StartWordTimer
 gps_refresh:
     call BuildWork
     lea dx, msg_work
@@ -900,6 +953,10 @@ gps_restart:
     mov al, 2
     ret
 gps_submit:
+    ; Blank Enter does not finish the round until every word is correct.
+    mov al, WordIndex
+    cmp al, WordCount
+    jb gps_refresh
     mov al, 3
     ret
 gps_menu:
