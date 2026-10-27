@@ -401,14 +401,14 @@ ClearScreen PROC
     push bx
     push cx
     push dx
-    mov ax, 0600h
-    mov bh, 07h
-    mov cx, 0000h
-    mov dx, 184Fh
+    mov ax, 0600h         ; INT 10h AH=06 scroll-up, AL=0 clears the window
+    mov bh, 07h           ; fill attribute: light gray on black
+    mov cx, 0000h         ; window upper-left: row 0, column 0
+    mov dx, 184Fh         ; window lower-right: row 24, column 79
     int 10h
-    mov ah, 02h
-    mov bh, 00h
-    mov dx, 0000h
+    mov ah, 02h           ; INT 10h AH=02 set cursor position
+    mov bh, 00h           ; video page 0
+    mov dx, 0000h         ; DH=row 0, DL=column 0
     int 10h
     pop dx
     pop cx
@@ -418,20 +418,21 @@ ClearScreen PROC
 ClearScreen ENDP
 
 ; DH = row. Fill that row with spaces and leave the cursor at column 0.
+; BIOS video writes only this HUD row so the rest of the screen is not redrawn.
 GotoClearRow PROC
     push ax
     push bx
     push cx
     push dx
-    mov ah, 02h
-    mov bh, 00h
-    mov dl, 0
+    mov ah, 02h           ; INT 10h AH=02 set cursor
+    mov bh, 00h           ; video page 0
+    mov dl, 0             ; column 0; DH already holds the target row
     int 10h
-    mov ah, 09h
+    mov ah, 09h           ; INT 10h AH=09 write character + attribute, CX times
     mov al, ' '
-    mov bh, 00h
-    mov bl, 07h
-    mov cx, 80
+    mov bh, 00h           ; video page 0
+    mov bl, 07h           ; light gray on black
+    mov cx, 80            ; one full 80-column text row
     int 10h
     pop dx
     pop cx
@@ -504,14 +505,14 @@ DisplayLiveTime PROC
     push ax
     push bx
     push dx
-    mov ah, 03h
-    mov bh, 0
+    mov ah, 03h           ; INT 10h AH=03 read cursor: DH=row, DL=column
+    mov bh, 0             ; video page 0
     int 10h
     mov SavedCursor, dx
-    mov ah, 02h
+    mov ah, 02h           ; INT 10h AH=02 move cursor to the HUD time cell
     mov bh, 0
-    mov dh, 0
-    mov dl, 40
+    mov dh, 0             ; row 0
+    mov dl, 40            ; column 40
     int 10h
     lea dx, live_time
     call PrintStr
@@ -520,7 +521,7 @@ DisplayLiveTime PROC
     lea dx, live_pad
     call PrintStr
     mov dx, SavedCursor
-    mov ah, 02h
+    mov ah, 02h           ; INT 10h AH=02 restore the input cursor
     mov bh, 0
     int 10h
     pop dx
@@ -531,21 +532,22 @@ DisplayLiveTime ENDP
 
 ShowScoreLine PROC
     ; Score sits on row 2 after ShowRound (Round is on row 1).
+    ; Save/restore the cursor so a correct-word update does not jump the prompt.
     push ax
     push bx
     push dx
-    mov ah, 03h
+    mov ah, 03h           ; INT 10h AH=03 read cursor into DX
     mov bh, 0
     int 10h
     push dx
     mov dh, 2
     call GotoClearRow
-    lea dx, msg_score+2
+    lea dx, msg_score+2   ; skip the leading CR/LF in msg_score
     call PrintStr
     mov ax, Score
     call PrintNum
     pop dx
-    mov ah, 02h
+    mov ah, 02h           ; INT 10h AH=02 restore saved cursor
     mov bh, 0
     int 10h
     pop dx
@@ -677,7 +679,8 @@ GenSentence PROC
     ret
 GenSentence ENDP
 
-; Encrypt uppercase letters forward by CL; preserve other chars.
+; Caesar-encrypt a '$'-terminated string: SI=source, DI=destination, CL=shift.
+; Only A-Z move forward by the shift (mod 26); spaces and other chars copy as-is.
 EncryptMsg proc
     push bx
     push cx
@@ -686,7 +689,7 @@ EncryptMsg proc
 en_normalize:
     cmp bl, 26
     jb en_loop
-    sub bl, 26
+    sub bl, 26            ; keep the working shift in 0..25
     jmp en_normalize
 en_loop:
     mov al, [si]
@@ -698,12 +701,12 @@ en_loop:
     cmp al, 'Z'
     ja en_copy
     
-    sub al, 'A'
+    sub al, 'A'           ; letter as 0..25
     add al, cl
     
     cmp al, 26
     jb en_ok
-    sub al, 26
+    sub al, 26            ; wrap past Z back to A
     
 en_ok:
     add al, 'A'  
@@ -898,6 +901,8 @@ BuildWork ENDP
 
 ; AL=1 if the word at WordIndex in WorkBuf matches PlainBuf.
 ; Stay on the current ciphertext word until this succeeds.
+; Both buffers are space-separated. Skip WordIndex words, then compare
+; letters until the next space or '$' on either side.
 CheckCurrentWord PROC
     push bx
     push cx
@@ -924,7 +929,7 @@ ccw_skip:
 ccw_skip_space:
     inc si
     inc di
-    loop ccw_skip
+    loop ccw_skip         ; CX counts remaining words to skip
 ccw_compare:
     mov al, [si]
     mov ah, [di]
@@ -939,7 +944,7 @@ ccw_compare:
     jmp ccw_compare
 ccw_end:
     cmp ah, ' '
-    je ccw_right
+    je ccw_right          ; plaintext word ended on the same boundary
     cmp ah, '$'
     je ccw_right
 ccw_wrong:
@@ -1007,9 +1012,9 @@ gps_again:
     call PrintNum
     lea dx, prompt_tail
     call PrintStr
-    mov ah, 00h
+    mov ah, 00h           ; INT 1Ah AH=00 read BIOS ticks: CX=high, DX=low
     int 1Ah
-    mov LastTick, dx
+    mov LastTick, dx      ; refresh timer baseline before the blocking ReadLine poll
     call ReadLine
     ; Blank Enter finishes the round only after every word is correct.
     cmp byte ptr InputBuf[1], 0
@@ -1041,7 +1046,7 @@ gps_again:
     xor bx, bx
     mov bl, WordIndex
     mov al, PlayerKeys[bx]
-    cmp al, ShiftKeys[bx]
+    cmp al, ShiftKeys[bx] ; directional hint vs the hidden per-word key
     ja gps_too_high
     jb gps_too_low
     lea dx, msg_wrong
@@ -1091,7 +1096,7 @@ gps_word_next:
     call StartWordTimer
     jmp gps_refresh
 gps_last_pause:
-    call WaitVisible
+    call WaitVisible      ; hold the last CORRECT/bonus line before the next sentence
     jmp gps_submit
 gps_refresh:
     jmp gps_again
@@ -1133,27 +1138,29 @@ ShowState PROC
 ShowState ENDP
 
 ; -------------------- Timer --------------------
+; BIOS INT 1Ah AH=00 returns the 18.2 Hz tick count in CX:DX (high:low).
 StartGameTimer PROC
     mov TimeLeft, START_TIME
     mov TickAccum, 0
     mov GameOver, 0
-    mov ah, 00h
+    mov ah, 00h           ; INT 1Ah AH=00 read current tick count
     int 1Ah
-    mov LastTick, dx
+    mov LastTick, dx      ; keep the low word; we poll often enough to ignore CX
     ret
 StartGameTimer ENDP
 
 UpdateGameTimer PROC
+    ; Convert BIOS ticks into whole seconds of TimeLeft. About 18 ticks = 1 second.
     cmp GameOver, 1
     je ugt_done
-    mov ah, 00h
+    mov ah, 00h           ; INT 1Ah AH=00 current ticks in CX:DX
     int 1Ah
     mov ax, dx
-    sub ax, LastTick
+    sub ax, LastTick      ; elapsed ticks since last poll (low word only)
     mov LastTick, dx
     cmp ax, 36
     jbe ugt_add
-    xor ax, ax
+    xor ax, ax            ; drop huge jumps (emulator pause or midnight wrap)
 ugt_add:
     add TickAccum, ax
 ugt_second:
@@ -1173,7 +1180,8 @@ ugt_done:
 UpdateGameTimer ENDP
 
 StartWordTimer PROC
-    mov ah, 00h
+    ; Snapshot CX:DX so a fast solve can award TIME_BONUS.
+    mov ah, 00h           ; INT 1Ah AH=00 read full 32-bit tick count
     int 1Ah
     mov WordStartTick, dx
     mov WordStartHi, cx
@@ -1182,13 +1190,13 @@ StartWordTimer PROC
 StartWordTimer ENDP
 
 CheckWordTime PROC
-    mov ah, 00h
+    mov ah, 00h           ; INT 1Ah AH=00 read ticks at the moment the word is solved
     int 1Ah
-    cmp cx, WordStartHi
+    cmp cx, WordStartHi   ; high word changed => far more than FAST_LIMIT has passed
     jne cwt_slow
     mov ax, dx
     sub ax, WordStartTick
-    cmp ax, FAST_LIMIT
+    cmp ax, FAST_LIMIT    ; FAST_LIMIT is ~30 seconds in BIOS ticks
     ja cwt_slow
     mov FastAnswer, 1
     ret
@@ -1198,10 +1206,12 @@ cwt_slow:
 CheckWordTime ENDP
 
 WaitVisible PROC
+    ; Hold about 2 seconds (36 BIOS ticks) so the last-word result stays on screen.
+    ; Keep the live timer running while waiting.
     push ax
     push bx
     push dx
-    mov ah, 00h
+    mov ah, 00h           ; INT 1Ah AH=00 start tick in DX
     int 1Ah
     mov bx, dx
 wv_loop:
@@ -1215,7 +1225,7 @@ wv_loop:
     je wv_tick
     call DisplayLiveTime
 wv_tick:
-    mov ah, 00h
+    mov ah, 00h           ; INT 1Ah AH=00 poll until DX advanced by ~36 ticks
     int 1Ah
     mov ax, dx
     sub ax, bx
