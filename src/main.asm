@@ -81,6 +81,8 @@ msg_round DB 13,10,'Round: $'
 msg_keys DB 13,10,'Word shifts used to create this puzzle (debug): $'
 msg_highscore DB 13,10,'High score: $'
 msg_newline DB 13,10,'$'
+live_time DB 'Time: $'
+live_pad  DB '   $'
 press_key DB 13,10,'Press any key to continue...$'
 msg_playagain DB 13,10,'Play again? Press Y to start a new game, or any other key for the menu: $'
 tBonus DB 13,10,'TIME BONUS! +30 SECONDS',13,10,'$'
@@ -320,8 +322,23 @@ pn_done:
 PrintNum ENDP
 
 ClearScreen PROC
-    mov ax, 0003h
+    push ax
+    push bx
+    push cx
+    push dx
+    mov ax, 0600h
+    mov bh, 07h
+    mov cx, 0000h
+    mov dx, 184Fh
     int 10h
+    mov ah, 02h
+    mov bh, 00h
+    mov dx, 0000h
+    int 10h
+    pop dx
+    pop cx
+    pop bx
+    pop ax
     ret
 ClearScreen ENDP
 
@@ -335,17 +352,11 @@ GotoClearRow PROC
     mov bh, 00h
     mov dl, 0
     int 10h
-    mov cx, 80
-gcr_sp:
-    mov ah, 02h
-    mov dl, ' '
-    int 21h
-    loop gcr_sp
-    pop dx
-    push dx
-    mov ah, 02h
+    mov ah, 09h
+    mov al, ' '
     mov bh, 00h
-    mov dl, 0
+    mov bl, 07h
+    mov cx, 80
     int 10h
     pop dx
     pop cx
@@ -407,11 +418,6 @@ rl_enter:
     mov bl, InputBuf[1]
     xor bh, bh
     mov byte ptr [InputBuf+2+bx], 0
-    mov dl, 13
-    mov ah, 02h
-    int 21h
-    mov dl, 10
-    int 21h
     ret
 rl_timeout:
     mov byte ptr InputBuf[1], 0
@@ -432,28 +438,12 @@ DisplayLiveTime PROC
     mov dh, 0
     mov dl, 40
     int 10h
-    mov dl, 'T'
-    mov ah, 02h
-    int 21h
-    mov dl, 'i'
-    int 21h
-    mov dl, 'm'
-    int 21h
-    mov dl, 'e'
-    int 21h
-    mov dl, ':'
-    int 21h
-    mov dl, ' '
-    int 21h
+    lea dx, live_time
+    call PrintStr
     mov ax, TimeLeft
     call PrintNum
-    mov dl, ' '
-    mov ah, 02h
-    int 21h
-    mov dl, ' '
-    int 21h
-    mov dl, ' '
-    int 21h
+    lea dx, live_pad
+    call PrintStr
     mov dx, SavedCursor
     mov ah, 02h
     mov bh, 0
@@ -940,6 +930,9 @@ gps_again:
     call PrintNum
     lea dx, prompt_tail
     call PrintStr
+    mov ah, 00h
+    int 1Ah
+    mov LastTick, dx
     call ReadLine
     ; Blank Enter finishes the round only after every word is correct.
     cmp byte ptr InputBuf[1], 0
