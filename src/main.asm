@@ -583,38 +583,49 @@ GenSentence PROC
 GenSentence ENDP
 
 ; Encrypt uppercase letters forward by CL; preserve other chars.
-EncryptMsg PROC                ; SI=input, DI=output, CL=shift 1..25
-    push ax
+EncryptMsg proc
     push bx
     push cx
+    
     mov bl, cl
-enc_loop:
+en_normalize:
+    cmp bl, 26
+    jb en_loop
+    sub bl, 26
+    jmp en_normalize
+en_loop:
     mov al, [si]
     cmp al, '$'
-    je enc_done
+    je en_done
+    
     cmp al, 'A'
-    jb enc_copy
+    jb en_copy
     cmp al, 'Z'
-    ja enc_copy
+    ja en_copy
+    
     sub al, 'A'
-    add al, bl
+    add al, cl
+    
     cmp al, 26
-    jb enc_letter
+    jb en_ok
     sub al, 26
-enc_letter:
-    add al, 'A'
-enc_copy:
+    
+en_ok:
+    add al, 'A'  
+    
+en_copy:
     mov [di], al
     inc si
     inc di
-    jmp enc_loop
-enc_done:
+    jmp en_loop 
+    
+en_done:
     mov byte ptr [di], '$'
+    
     pop cx
     pop bx
-    pop ax
     ret
-EncryptMsg ENDP
+EncryptMsg endp
 
 ; Decrypt uppercase letters backward by CL.
 DecryptMsg PROC                ; SI=input, DI=output, CL=shift 1..25
