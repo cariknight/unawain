@@ -44,16 +44,25 @@ CharTemp    DB 0
 OldTime     DW 0
 SavedCursor DW 0
 SrcPos      DW 0
-OutPos      DW 0
+OutPos      DW 0      
 
+; title_str: Stores the game title header surrounded by decorative borders.
+; 13 (0DH) = Carriage Return, 10 (0AH) = Line Feed (creates a new line).
+; '$' = End-of-string terminator used by DOS interrupt INT 21h, Function 09h.
 title_str DB 13,10,'========================================',13,10
           DB '           UNAWAIN: DECIPHER',13,10
-          DB '========================================',13,10,'$'
+          DB '========================================',13,10,'$'   
+
+;start menu presenting interactive options for the user
+;1 - start a game,2 - tutorial page, 3 - view highest recorded score, 4 - Exit
+
 menu_str  DB 13,10,'1. Start Game',13,10
           DB '2. How to Play (Tutorial)',13,10
           DB '3. High Scores',13,10
           DB '4. Exit',13,10
-          DB 'Select option [1-4]: $'
+          DB 'Select option [1-4]: $'    
+          
+;tutorial page containing the rules, scoring mechanics, and control keys of the game 
 tutorial_str DB 13,10,'HOW TO PLAY',13,10
              DB 'Each word has its own Caesar shift from 1 to 25.',13,10
              DB 'Enter the positive shift used to encrypt each word.',13,10
@@ -62,29 +71,84 @@ tutorial_str DB 13,10,'HOW TO PLAY',13,10
              DB 'Stay on a word until it is correct, then move to the next.',13,10
              DB 'U = undo current word; R = new round; Q = menu.',13,10
              DB 'Each correct word: +10 points and +30 seconds if fast.',13,10
-             DB 'Wrong shift: stay on the same word. No time penalty.',13,10
+             DB 'Wrong shift: stay on the same word. No time penalties will be applied.',13,10
              DB 'Press any key to return to the menu...$'
+        
+        
+; GAMEPLAY PROMPTS & USER CONTROLS
+
+; prompt_shift: Lead-in message printed before displaying the current word index.
 prompt_shift DB 'Shift for word #$'
+
+; prompt_tail: Instruction suffix displayed alongside the word prompt listing valid inputs and key commands.
 prompt_tail  DB ' (1-25; Enter=submit; U undo; R restart; Q menu): $'
+
+; msg_invalid: Error displayed when the user inputs a non-numeric value or a number outside 1-25.
 msg_invalid DB 'Invalid input. Enter a number from 1 to 25.$'
+
+; msg_undo: Feedback message shown when the 'U' key is pressed to reset current word progress.
 msg_undo DB 'Current word reset to the original ciphertext.$'
+
+; msg_restart: Notification printed when the 'R' key triggers a new game round.
+; 13, 10 (0DH, 0AH) inserts leading and trailing newlines for spacing.
 msg_restart DB 13,10,'Starting a new round...',13,10,'$'
+    
+    
+; GUESS FEEDBACK & GAME LOGIC MESSAGES
+
+; msg_correct: Success message triggered upon guessing the correct Caesar shift value.
 msg_correct DB 'CORRECT! +10 points.$'
+
+; msg_wrong: General error prompt shown after an incorrect shift attempt.
 msg_wrong DB 'Not correct. Stay on this word and try another shift.$'
+
+; msg_too_high: Directional hint when the guessed shift value is greater than the target shift.
 msg_too_high DB 'Shift is TOO HIGH. Try a lower number.$'
+
+; msg_too_low: Directional hint when the guessed shift value is smaller than the target shift.
 msg_too_low  DB 'Shift is TOO LOW. Try a higher number.$'
+
+; msg_bonus: Alert displayed when a word is solved quickly enough to earn time extension rewards.
 msg_bonus DB 'TIME BONUS! +30 SECONDS$'
+
+; msg_gameover: Termination banner output when the countdown timer hits zero.
 msg_gameover DB 13,10,'TIME IS UP!',13,10,'$'
+    
+    
+; DYNAMIC HUD & STATUS DISPLAYS
+
+; msg_cipher: Prefix string shown before printing the encrypted target word.
 msg_cipher DB 13,10,'Ciphertext: $'
+
+; msg_work: Prefix string displayed before showing the player's current decoded attempt.
 msg_work DB 'Your answer: $'
+
+; msg_score: Header string printed before rendering the player's current total score.
 msg_score DB 13,10,'Score: $'
+
+; msg_round: Header string printed before displaying the active round counter.
 msg_round DB 13,10,'Round: $'
+
+; msg_highscore: Header string printed before rendering the highest recorded score in memory.
 msg_highscore DB 13,10,'High score: $'
+
+; msg_newline: Standalone carriage return/line feed sequence used purely for line formatting.
 msg_newline DB 13,10,'$'
+
+; live_time: Header label displayed before updating the real-time countdown clock display.
 live_time DB 'Time: $'
+
+; live_pad: Blank spacing buffer used to clear or align dynamic characters on screen.
 live_pad  DB '   $'
+
+
+; GAME OVER & FLOW CONTROL PROMPTS
+
+; press_key: Generic pause prompt requiring user acknowledgement before continuing code execution.
 press_key DB 13,10,'Press any key to continue...$'
-msg_playagain DB 13,10,'Play again? Press Y to start a new game, or any other key for the menu: $'
+
+; msg_playagain: End-of-game prompt routing the player to restart immediately or exit back to the main menu.
+msg_playagain DB 13,10,'Play again? Press Y to start a new game, or any other key for the menu: $' 
 
 ; Word bank: 20 subjects, 20 verbs, 20 objects
 S1 DB 'THE CAT$'
@@ -171,30 +235,32 @@ main PROC
     call SeedRandom
     call LoadHighScore
 
+;the menu_loop 
 menu_loop:
     call ClearScreen
-    lea dx, title_str
-    call PrintStr
+    lea dx, title_str     ; Load offset address of the title banner into DX
+    call PrintStr         ; Display the game title banner via DOS interrupt routine
     lea dx, menu_str
-    call PrintStr
+    call PrintStr         ;Display menu choices and user prompt
     mov ah, 01h
     int 21h
-    cmp al, '1'
+    cmp al, '1'           ;jump to menu_start if input is 1
     je menu_start
-    cmp al, '2'
+    cmp al, '2'           ;jump to menu_tutorial if input is 2
     je menu_tutorial
-    cmp al, '3'
+    cmp al, '3'           ;jump to menu_scores if input is 3
     je menu_scores
-    cmp al, '4'
+    cmp al, '4'           ;jump to menu_exit if input is 4
     je menu_exit
-    jmp menu_loop
+    jmp menu_loop         ; Invalid choice entered; repeat loop to redraw menu and prompt again
 
 menu_start:
     call ClearScreen
     mov Score, 0
     mov Round, 1
     call StartGameTimer
-    call NewRound
+    call NewRound 
+    
 game_loop:
     call UpdateGameTimer
     cmp GameOver, 1
@@ -320,6 +386,7 @@ pn_done:
     ret
 PrintNum ENDP
 
+;clears the screen before displaying the new interface
 ClearScreen PROC
     push ax
     push bx
