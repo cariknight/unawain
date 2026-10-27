@@ -66,7 +66,7 @@ tutorial_str DB 13,10,'HOW TO PLAY',13,10
              DB 'Press any key to return to the menu...$'
 prompt_shift DB 'Shift for word #$'
 prompt_tail  DB ' (1-25; blank Enter=submit; U undo; R restart; Q menu): $'
-msg_invalid DB 13,10,'Invalid input. Enter a number from 1 to 25.',13,10,'$'
+msg_invalid DB 'Invalid input. Enter a number from 1 to 25.$'
 msg_undo DB 13,10,'Answer reset to the original ciphertext.',13,10,'$'
 msg_restart DB 13,10,'Starting a new round...',13,10,'$'
 msg_correct DB 'CORRECT! +10 points.$'
@@ -1032,8 +1032,7 @@ gps_menu:
     ret
 gps_invalid:
     lea dx, msg_invalid
-    call PrintStr
-    jmp gps_again
+    jmp gps_hint
 gps_timeout:
     xor al, al
     ret
