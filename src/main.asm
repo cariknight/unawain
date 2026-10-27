@@ -65,7 +65,7 @@ tutorial_str DB 13,10,'HOW TO PLAY',13,10
              DB 'Wrong shift: stay on the same word. No time penalty.',13,10
              DB 'Press any key to return to the menu...$'
 prompt_shift DB 'Shift for word #$'
-prompt_tail  DB ' (1-25; blank Enter=submit; U undo; R restart; Q menu): $'
+prompt_tail  DB ' (1-25; Enter=submit; U undo; R restart; Q menu): $'
 msg_invalid DB 'Invalid input. Enter a number from 1 to 25.$'
 msg_undo DB 'Current word reset to the original ciphertext.$'
 msg_restart DB 13,10,'Starting a new round...',13,10,'$'
