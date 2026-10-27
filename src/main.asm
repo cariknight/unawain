@@ -64,16 +64,17 @@ tutorial_str DB 13,10,'HOW TO PLAY',13,10
              DB 'Each correct word: +10 points and +30 seconds if fast.',13,10
              DB 'Wrong shift: stay on the same word. No time penalty.',13,10
              DB 'Press any key to return to the menu...$'
-prompt_shift DB 13,10,'Shift for word # (1-25; blank Enter=submit; U undo; R restart; Q menu): $'
+prompt_shift DB 'Shift for word #$'
+prompt_tail  DB ' (1-25; blank Enter=submit; U undo; R restart; Q menu): $'
 msg_invalid DB 13,10,'Invalid input. Enter a number from 1 to 25.',13,10,'$'
 msg_undo DB 13,10,'Answer reset to the original ciphertext.',13,10,'$'
 msg_restart DB 13,10,'Starting a new round...',13,10,'$'
-msg_correct DB 13,10,'CORRECT! +10 points.',13,10,'$'
-msg_wrong DB 13,10,'Not correct. Stay on this word and try another shift.',13,10,'$'
-msg_bonus DB 13,10,'TIME BONUS! +30 SECONDS',13,10,'$'
+msg_correct DB 'CORRECT! +10 points.$'
+msg_wrong DB 'Not correct. Stay on this word and try another shift.$'
+msg_bonus DB 'TIME BONUS! +30 SECONDS$'
 msg_gameover DB 13,10,'TIME IS UP!',13,10,'$'
 msg_cipher DB 13,10,'Ciphertext: $'
-msg_work DB 13,10,'Your answer: $'
+msg_work DB 'Your answer: $'
 msg_score DB 13,10,'Score: $'
 msg_time DB '   Time left: $'
 msg_round DB 13,10,'Round: $'
@@ -323,6 +324,35 @@ ClearScreen PROC
     int 10h
     ret
 ClearScreen ENDP
+
+; DH = row. Fill that row with spaces and leave the cursor at column 0.
+GotoClearRow PROC
+    push ax
+    push bx
+    push cx
+    push dx
+    mov ah, 02h
+    mov bh, 00h
+    mov dl, 0
+    int 10h
+    mov cx, 80
+gcr_sp:
+    mov ah, 02h
+    mov dl, ' '
+    int 21h
+    loop gcr_sp
+    pop dx
+    push dx
+    mov ah, 02h
+    mov bh, 00h
+    mov dl, 0
+    int 10h
+    pop dx
+    pop cx
+    pop bx
+    pop ax
+    ret
+GotoClearRow ENDP
 
 ReadLine PROC
     ; Poll the keyboard while updating the game timer.
@@ -893,7 +923,22 @@ GetPlayerShifts PROC
 gps_again:
     cmp GameOver, 1
     je gps_timeout
+    call BuildWork
+    mov dh, 5
+    call GotoClearRow
+    lea dx, msg_work
+    call PrintStr
+    lea dx, WorkBuf
+    call PrintStr
+    mov dh, 6
+    call GotoClearRow
     lea dx, prompt_shift
+    call PrintStr
+    xor ax, ax
+    mov al, WordIndex
+    inc ax
+    call PrintNum
+    lea dx, prompt_tail
     call PrintStr
     call ReadLine
     ; Blank Enter finishes the round only after every word is correct.
@@ -924,39 +969,31 @@ gps_again:
     cmp al, 1
     je gps_word_ok
     
-    mov ah, 02h
-    mov bh, 00h
     mov dh, 8
-    mov dl, 0
-    int 10h
-    
+    call GotoClearRow
     lea dx, msg_wrong
     call PrintStr
+    mov dh, 9
+    call GotoClearRow
     jmp gps_refresh
 gps_word_ok:
     call CheckWordTime
-    add Score, POINTS_CORRECT 
-    
-    mov ah, 02h
-    mov bh, 00h
+    add Score, POINTS_CORRECT
     mov dh, 8
-    mov dl, 0
-    int 10h
-    
+    call GotoClearRow
     lea dx, msg_correct
-    call PrintStr   
-    
+    call PrintStr
     cmp FastAnswer, 1
-    jne gps_word_next
+    jne gps_clear_bonus
     add TimeLeft, TIME_BONUS
-    
-    mov ah, 02h
-    mov bh, 00h
     mov dh, 9
-    mov dl, 0
-    
+    call GotoClearRow
     lea dx, msg_bonus
     call PrintStr
+    jmp gps_word_next
+gps_clear_bonus:
+    mov dh, 9
+    call GotoClearRow
 gps_word_next:
     inc WordIndex
     mov al, WordIndex
@@ -965,29 +1002,6 @@ gps_word_next:
     call StartWordTimer
     jmp gps_refresh
 gps_refresh:
-    call BuildWork
-    
-    ;new
-    mov ah, 02h
-    mov bh, 00h
-    mov dh, 4
-    mov dl, 0
-    int 10h
-    
-    
-    ;call ShowRound
-    lea dx, msg_work
-    call PrintStr
-    lea dx, WorkBuf
-    call PrintStr
-    ;jmp gps_again
-    mov cx, 40
-gps_clear_answer:
-    mov ah, 02h
-    mov dl, ' '
-    int 21h
-    loop gps_clear_answer
-    
     jmp gps_again
 gps_undo:
     call ResetWork
