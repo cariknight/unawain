@@ -67,7 +67,7 @@ title_str DB 13,10,'========================================',13,10
 
 menu_str  DB 13,10,'1. Start Game',13,10
           DB '2. How to Play (Tutorial)',13,10
-          DB '3. High Scores',13,10
+          DB '3. Highest Score',13,10
           DB '4. Exit',13,10
           DB 'Select option [1-4]: $'    
           
@@ -117,8 +117,8 @@ msg_too_low  DB 'Shift is TOO LOW. Try a higher number.$'
 ; msg_bonus: Alert displayed when a word is solved quickly enough to earn time extension rewards.
 msg_bonus DB 'TIME BONUS! +30 SECONDS$'
 
-; msg_gameover: Termination banner output when the countdown timer hits zero.
-msg_gameover DB 13,10,'TIME IS UP!',13,10,'$'
+; msg_gameover: Termination banner on the same HUD row as CORRECT/hint prompts.
+msg_gameover DB 'TIME IS UP!$'
     
     
 ; DYNAMIC HUD & STATUS DISPLAYS
@@ -305,6 +305,8 @@ game_menu:
     jmp menu_loop
 
 game_over:
+    mov dh, 8
+    call GotoClearRow
     lea dx, msg_gameover
     call PrintStr
     call ShowState
