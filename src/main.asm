@@ -6,8 +6,8 @@
 ; ============================================================
 
 POINTS_CORRECT EQU 10
-TIME_BONUS     EQU 30
-START_TIME     EQU 193
+TIME_BONUS     EQU 15
+START_TIME     EQU 191
 FAST_LIMIT     EQU 546       ; approximately 30 BIOS ticks/seconds
 SUBJ_COUNT     EQU 20
 VERB_COUNT     EQU 20
@@ -71,6 +71,8 @@ msg_undo DB 13,10,'Answer reset to the original ciphertext.',13,10,'$'
 msg_restart DB 13,10,'Starting a new round...',13,10,'$'
 msg_correct DB 'CORRECT! +10 points.$'
 msg_wrong DB 'Not correct. Stay on this word and try another shift.$'
+msg_too_high DB 'Shift is TOO HIGH. Try a lower number.$'
+msg_too_low  DB 'Shift is TOO LOW. Try a higher number.$'
 msg_bonus DB 'TIME BONUS! +30 SECONDS$'
 msg_gameover DB 13,10,'TIME IS UP!',13,10,'$'
 msg_cipher DB 13,10,'Ciphertext: $'
@@ -961,10 +963,24 @@ gps_again:
     call CheckCurrentWord
     cmp al, 1
     je gps_word_ok
-    
+    xor bx, bx
+    mov bl, WordIndex
+    mov al, PlayerKeys[bx]
+    cmp al, ShiftKeys[bx]
+    ja gps_too_high
+    jb gps_too_low
+    lea dx, msg_wrong
+    jmp gps_hint
+gps_too_high:
+    lea dx, msg_too_high
+    jmp gps_hint
+gps_too_low:
+    lea dx, msg_too_low
+gps_hint:
+    push dx
     mov dh, 8
     call GotoClearRow
-    lea dx, msg_wrong
+    pop dx
     call PrintStr
     mov dh, 9
     call GotoClearRow
