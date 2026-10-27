@@ -78,7 +78,6 @@ msg_gameover DB 13,10,'TIME IS UP!',13,10,'$'
 msg_cipher DB 13,10,'Ciphertext: $'
 msg_work DB 'Your answer: $'
 msg_score DB 13,10,'Score: $'
-msg_time DB '   Time left: $'
 msg_round DB 13,10,'Round: $'
 msg_highscore DB 13,10,'High score: $'
 msg_newline DB 13,10,'$'
@@ -380,7 +379,6 @@ rl_wait:
     cmp ax, OldTime
     je rl_keycheck
     call DisplayLiveTime
-    call ShowScoreLine
 rl_keycheck:
     mov ah, 01h
     int 16h
@@ -456,7 +454,7 @@ DisplayLiveTime PROC
 DisplayLiveTime ENDP
 
 ShowScoreLine PROC
-    ; Score/time sit on row 2 after ShowRound (Round is on row 1).
+    ; Score sits on row 2 after ShowRound (Round is on row 1).
     push ax
     push bx
     push dx
@@ -469,10 +467,6 @@ ShowScoreLine PROC
     lea dx, msg_score+2
     call PrintStr
     mov ax, Score
-    call PrintNum
-    lea dx, msg_time
-    call PrintStr
-    mov ax, TimeLeft
     call PrintNum
     pop dx
     mov ah, 02h
@@ -895,11 +889,6 @@ ShowRound PROC
     lea dx, msg_score
     call PrintStr
     mov ax, Score
-    call PrintNum 
-    
-    lea dx, msg_time
-    call PrintStr
-    mov ax, TimeLeft
     call PrintNum
     
     lea dx, msg_cipher
@@ -1062,10 +1051,6 @@ ShowState PROC
     call PrintStr
     mov ax, Score
     call PrintNum
-    lea dx, msg_time
-    call PrintStr
-    mov ax, TimeLeft
-    call PrintNum
     lea dx, msg_newline
     call PrintStr
     ret
@@ -1153,7 +1138,6 @@ wv_loop:
     cmp ax, OldTime
     je wv_tick
     call DisplayLiveTime
-    call ShowScoreLine
 wv_tick:
     mov ah, 00h
     int 1Ah
