@@ -684,12 +684,12 @@ GenSentence ENDP
 ; Caesar-encrypt a '$'-terminated string: SI=source, DI=destination, CL=shift.
 ; Only A-Z move forward by the shift (mod 26); spaces and other chars copy as-is.
 EncryptMsg proc
-    push bx
-    push cx
-    
-    mov bl, cl
-en_normalize:
-    cmp bl, 26
+    push bx               ; save BX, this procedure uses it as a temporary register
+    push cx               ; save CX,to store original shift value later
+                  
+    mov bl, cl            ; copy shift value to BL for normalization
+en_normalize:             ; checks whether shift is below 26
+    cmp bl, 26    
     jb en_loop
     sub bl, 26            ; keep the working shift in 0..25
     jmp en_normalize
@@ -722,9 +722,9 @@ en_copy:
 en_done:
     mov byte ptr [di], '$'
     
-    pop cx
-    pop bx
-    ret
+    pop cx               ; restore original cx value
+    pop bx               ; restore original bx value
+    ret        
 EncryptMsg endp
 
 ; Decrypt uppercase letters backward by CL.
