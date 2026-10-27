@@ -6,8 +6,8 @@
 ; ============================================================
 
 POINTS_CORRECT EQU 10
-TIME_BONUS     EQU 15
-START_TIME     EQU 191
+TIME_BONUS     EQU 30
+START_TIME     EQU 180
 FAST_LIMIT     EQU 546       ; approximately 30 BIOS ticks/seconds
 SUBJ_COUNT     EQU 20
 VERB_COUNT     EQU 20
@@ -24,7 +24,6 @@ TmpWord     DB 20 DUP('$')
 EncTmp      DB 20 DUP('$')
 Score       DW 0
 Round       DW 1
-RoundStatus DB 0
 TimeLeft    DW START_TIME
 Seed        DW 0
 GameOver    DB 0
@@ -32,6 +31,7 @@ HighScore   DW 0
 LastTick    DW 0
 TickAccum   DW 0
 WordStartTick DW 0
+WordStartHi DW 0
 FastAnswer  DB 0
 HSFileName  DB 'HISCORE.DAT',0
 HSBuffer    DB 2 DUP(0)
@@ -60,14 +60,14 @@ tutorial_str DB 13,10,'HOW TO PLAY',13,10
              DB 'Example: KHOOR encrypted with +3 becomes HELLO',13,10
              DB 'Enter a shift from 1 to 25 for each word.',13,10
              DB 'Stay on a word until it is correct, then move to the next.',13,10
-             DB 'U = undo/reset; R = new round; Q = menu.',13,10
+             DB 'U = undo current word; R = new round; Q = menu.',13,10
              DB 'Each correct word: +10 points and +30 seconds if fast.',13,10
              DB 'Wrong shift: stay on the same word. No time penalty.',13,10
              DB 'Press any key to return to the menu...$'
 prompt_shift DB 'Shift for word #$'
 prompt_tail  DB ' (1-25; blank Enter=submit; U undo; R restart; Q menu): $'
 msg_invalid DB 'Invalid input. Enter a number from 1 to 25.$'
-msg_undo DB 13,10,'Answer reset to the original ciphertext.',13,10,'$'
+msg_undo DB 'Current word reset to the original ciphertext.$'
 msg_restart DB 13,10,'Starting a new round...',13,10,'$'
 msg_correct DB 'CORRECT! +10 points.$'
 msg_wrong DB 'Not correct. Stay on this word and try another shift.$'
@@ -80,14 +80,12 @@ msg_work DB 'Your answer: $'
 msg_score DB 13,10,'Score: $'
 msg_time DB '   Time left: $'
 msg_round DB 13,10,'Round: $'
-msg_keys DB 13,10,'Word shifts used to create this puzzle (debug): $'
 msg_highscore DB 13,10,'High score: $'
 msg_newline DB 13,10,'$'
 live_time DB 'Time: $'
 live_pad  DB '   $'
 press_key DB 13,10,'Press any key to continue...$'
 msg_playagain DB 13,10,'Play again? Press Y to start a new game, or any other key for the menu: $'
-tBonus DB 13,10,'TIME BONUS! +30 SECONDS',13,10,'$'
 
 ; Word bank: 20 subjects, 20 verbs, 20 objects
 S1 DB 'THE CAT$'
@@ -382,6 +380,7 @@ rl_wait:
     cmp ax, OldTime
     je rl_keycheck
     call DisplayLiveTime
+    call ShowScoreLine
 rl_keycheck:
     mov ah, 01h
     int 16h
@@ -458,6 +457,13 @@ DisplayLiveTime ENDP
 
 ShowScoreLine PROC
     ; Score/time sit on row 2 after ShowRound (Round is on row 1).
+    push ax
+    push bx
+    push dx
+    mov ah, 03h
+    mov bh, 0
+    int 10h
+    push dx
     mov dh, 2
     call GotoClearRow
     lea dx, msg_score+2
@@ -468,6 +474,13 @@ ShowScoreLine PROC
     call PrintStr
     mov ax, TimeLeft
     call PrintNum
+    pop dx
+    mov ah, 02h
+    mov bh, 0
+    int 10h
+    pop dx
+    pop bx
+    pop ax
     ret
 ShowScoreLine ENDP
 
@@ -489,10 +502,13 @@ parse_loop:
     cmp bl, '9'
     ja parse_bad
     sub bl, '0'
+    xor bh, bh
     mov dx, 10
     mul dx
-    xor bh, bh
+    cmp dx, 0
+    jne parse_bad
     add ax, bx
+    jc parse_bad
     inc si
     loop parse_loop
     clc
@@ -744,7 +760,6 @@ NewRound PROC
     call GenSentence
     call EncryptPerWord
     call ResetWork
-    mov RoundStatus, 0
     ret
 NewRound ENDP
 
@@ -810,26 +825,6 @@ bw_done:
     stosb
     ret
 BuildWork ENDP
-
-CheckAnswer PROC              ; AL=1 if WorkBuf equals PlainBuf, else 0
-    lea si, WorkBuf
-    lea di, PlainBuf
-ca_loop:
-    mov al, [si]
-    cmp al, [di]
-    jne ca_wrong
-    cmp al, '$'
-    je ca_right
-    inc si
-    inc di
-    jmp ca_loop
-ca_right:
-    mov al, 1
-    ret
-ca_wrong:
-    xor al, al
-    ret
-CheckAnswer ENDP
 
 ; AL=1 if the word at WordIndex in WorkBuf matches PlainBuf.
 ; Stay on the current ciphertext word until this succeeds.
@@ -1008,6 +1003,7 @@ gps_word_ok:
     add TimeLeft, TIME_BONUS
 gps_score_hud:
     call ShowScoreLine
+    call DisplayLiveTime
     mov dh, 8
     call GotoClearRow
     lea dx, msg_correct
@@ -1026,16 +1022,20 @@ gps_word_next:
     inc WordIndex
     mov al, WordIndex
     cmp al, WordCount
-    jae gps_submit
+    jae gps_last_pause
     call StartWordTimer
     jmp gps_refresh
+gps_last_pause:
+    call WaitVisible
+    jmp gps_submit
 gps_refresh:
     jmp gps_again
 gps_undo:
-    call ResetWork
+    xor bx, bx
+    mov bl, WordIndex
+    mov PlayerKeys[bx], 0
     lea dx, msg_undo
-    call PrintStr
-    jmp gps_again
+    jmp gps_hint
 gps_restart:
     mov al, 2
     ret
@@ -1090,6 +1090,10 @@ UpdateGameTimer PROC
     mov ax, dx
     sub ax, LastTick
     mov LastTick, dx
+    cmp ax, 36
+    jbe ugt_add
+    xor ax, ax
+ugt_add:
     add TickAccum, ax
 ugt_second:
     cmp TickAccum, 18
@@ -1111,6 +1115,7 @@ StartWordTimer PROC
     mov ah, 00h
     int 1Ah
     mov WordStartTick, dx
+    mov WordStartHi, cx
     mov FastAnswer, 0
     ret
 StartWordTimer ENDP
@@ -1118,6 +1123,8 @@ StartWordTimer ENDP
 CheckWordTime PROC
     mov ah, 00h
     int 1Ah
+    cmp cx, WordStartHi
+    jne cwt_slow
     mov ax, dx
     sub ax, WordStartTick
     cmp ax, FAST_LIMIT
@@ -1128,6 +1135,38 @@ cwt_slow:
     mov FastAnswer, 0
     ret
 CheckWordTime ENDP
+
+WaitVisible PROC
+    push ax
+    push bx
+    push dx
+    mov ah, 00h
+    int 1Ah
+    mov bx, dx
+wv_loop:
+    cmp GameOver, 1
+    je wv_done
+    mov ax, TimeLeft
+    mov OldTime, ax
+    call UpdateGameTimer
+    mov ax, TimeLeft
+    cmp ax, OldTime
+    je wv_tick
+    call DisplayLiveTime
+    call ShowScoreLine
+wv_tick:
+    mov ah, 00h
+    int 1Ah
+    mov ax, dx
+    sub ax, bx
+    cmp ax, 36
+    jb wv_loop
+wv_done:
+    pop dx
+    pop bx
+    pop ax
+    ret
+WaitVisible ENDP
 
 ; -------------------- High score file --------------------
 LoadHighScore PROC
