@@ -78,7 +78,7 @@ tutorial_str DB 13,10,'HOW TO PLAY',13,10
              DB 'Example: KHOOR encrypted with +3 becomes HELLO',13,10
              DB 'Enter a shift from 1 to 25 for each word.',13,10
              DB 'Stay on a word until it is correct, then move to the next.',13,10
-             DB 'U = undo current word; R = new round; Q = menu.',13,10
+             DB 'R = restart game; Q = menu.',13,10
              DB 'Each correct word: +10 points and +30 seconds if fast.',13,10
              DB 'Wrong shift: stay on the same word. No time penalties will be applied.',13,10
              DB 'Press any key to return to the menu...$'
@@ -90,17 +90,14 @@ tutorial_str DB 13,10,'HOW TO PLAY',13,10
 prompt_shift DB 'Shift for word #$'
 
 ; prompt_tail: Instruction suffix displayed alongside the word prompt listing valid inputs and key commands.
-prompt_tail  DB ' (1-25; Enter=submit; U undo; R restart; Q menu): $'
+prompt_tail  DB ' (1-25; Enter=submit; R restart; Q menu): $'
 
 ; msg_invalid: Error displayed when the user inputs a non-numeric value or a number outside 1-25.
 msg_invalid DB 'Invalid input. Enter a number from 1 to 25.$'
 
-; msg_undo: Feedback message shown when the 'U' key is pressed to reset current word progress.
-msg_undo DB 'Current word reset to the original ciphertext.$'
-
-; msg_restart: Notification printed when the 'R' key triggers a new game round.
+; msg_restart: Notification printed when the 'R' key starts a fresh game.
 ; 13, 10 (0DH, 0AH) inserts leading and trailing newlines for spacing.
-msg_restart DB 13,10,'Starting a new round...',13,10,'$'
+msg_restart DB 13,10,'Restarting the game...',13,10,'$'
     
     
 ; GUESS FEEDBACK & GAME LOGIC MESSAGES
@@ -297,6 +294,9 @@ game_submit:
 game_restart:
     lea dx, msg_restart
     call PrintStr
+    mov Score, 0
+    mov Round, 1
+    call StartGameTimer
     call NewRound
     jmp game_loop
 
@@ -1021,8 +1021,6 @@ gps_again:
     je gps_submit
     mov al, InputBuf[2]
     and al, 0DFh
-    cmp al, 'U'
-    je gps_undo
     cmp al, 'R'
     je gps_restart
     cmp al, 'Q'
@@ -1100,12 +1098,6 @@ gps_last_pause:
     jmp gps_submit
 gps_refresh:
     jmp gps_again
-gps_undo:
-    xor bx, bx
-    mov bl, WordIndex
-    mov PlayerKeys[bx], 0
-    lea dx, msg_undo
-    jmp gps_hint
 gps_restart:
     mov al, 2
     ret
