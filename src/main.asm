@@ -456,6 +456,21 @@ DisplayLiveTime PROC
     ret
 DisplayLiveTime ENDP
 
+ShowScoreLine PROC
+    ; Score/time sit on row 2 after ShowRound (Round is on row 1).
+    mov dh, 2
+    call GotoClearRow
+    lea dx, msg_score+2
+    call PrintStr
+    mov ax, Score
+    call PrintNum
+    lea dx, msg_time
+    call PrintStr
+    mov ax, TimeLeft
+    call PrintNum
+    ret
+ShowScoreLine ENDP
+
 ; Parse InputBuf into AX. CF=1 if not a non-negative decimal integer.
 ParseNumber PROC
     push bx
@@ -988,13 +1003,17 @@ gps_hint:
 gps_word_ok:
     call CheckWordTime
     add Score, POINTS_CORRECT
+    cmp FastAnswer, 1
+    jne gps_score_hud
+    add TimeLeft, TIME_BONUS
+gps_score_hud:
+    call ShowScoreLine
     mov dh, 8
     call GotoClearRow
     lea dx, msg_correct
     call PrintStr
     cmp FastAnswer, 1
     jne gps_clear_bonus
-    add TimeLeft, TIME_BONUS
     mov dh, 9
     call GotoClearRow
     lea dx, msg_bonus
