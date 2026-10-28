@@ -2,7 +2,7 @@
 .STACK 100h
 
 ; ============================================================
-; UNAWAIN: DECIPHER
+; ENIGMA : DECIPHER
 ; ============================================================
 ; In accomplishment of CS125L M2 Machine Problem 
 ;
@@ -59,7 +59,7 @@ OutPos      DW 0
 ; 13 (0DH) = Carriage Return, 10 (0AH) = Line Feed (creates a new line).
 ; '$' = End-of-string terminator used by DOS interrupt INT 21h, Function 09h.
 title_str DB 13,10,'========================================',13,10
-          DB '           UNAWAIN: DECIPHER',13,10
+          DB '           ENIGMA : DECIPHER',13,10
           DB '========================================',13,10,'$'   
 
 ;start menu presenting interactive options for the user
